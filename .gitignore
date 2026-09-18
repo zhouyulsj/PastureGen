@@ -1,0 +1,37 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.env
+.idea/
+.vscode/
+dist/
+build/
+*.db
+*.sqlite3
+uploads/
+genotype_files/
+
+# 测试与覆盖率缓存
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# 运行产物与日志
+data/
+*.log
+logs/
+
+# 本地环境备份与 OS 杂项
+*.env.bak
+*.env.*.bak
+.DS_Store
+Thumbs.db
+desktop.ini
