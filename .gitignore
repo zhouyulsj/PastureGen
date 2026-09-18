@@ -29,6 +29,9 @@ data/
 *.log
 logs/
 
+# 本地待办清单（仅本地记录，不入库）
+TODO.md
+
 # 本地环境备份与 OS 杂项
 *.env.bak
 *.env.*.bak
