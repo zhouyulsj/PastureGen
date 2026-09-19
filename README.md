@@ -16,6 +16,20 @@ PastureGen 覆盖三大业务主线：
 
 在保证育种算法可用性的同时，平台按生产级要求实现了多租户隔离、异步消息推送与完整测试基线。
 
+## 仓库镜像
+
+本仓库在两个平台保持同步，互为镜像，统一以 **GitHub 为上游主仓库**：
+
+| 平台 | 地址 | 职责 |
+|---|---|---|
+| GitHub | <https://github.com/zhouyulsj/PastureGen> | 主仓库（`origin`），CI / issue 所在地 |
+| AtomGit | <https://atomgit.com/zhouyulsj/PastureGen> | 镜像（`atomgit`），国内访问加速 |
+
+> 提交请同步推送到两个远端，保持 `main` 双端一致：
+> ```bash
+> git push origin main && git push atomgit main
+> ```
+
 ## 功能特性
 
 ### 领域算法
