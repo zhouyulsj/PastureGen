@@ -20,11 +20,11 @@ PastureGen 覆盖三大业务主线：
 
 ### 领域算法
 
-- **系谱分析**：亲代-子代家系构建，近交系数与亲缘关系计算。
+- **系谱分析**：亲代-子代家系构建，近交系数与亲缘关系计算（拓扑排序保证结果与登记顺序无关，环路登记被拒绝）。
 - **BLUP 遗传评估**：多性状育种值估计（`app/breeding/blup.py`）。
-- **SNP 质控**：缺失率、哈迪-温伯格平衡、最小等位基因频率过滤（`app/genomics/snp_quality_control.py`）。
+- **SNP 质控**：缺失率、最小等位基因频率过滤（`app/genomics/snp_quality_control.py`）。
 - **基因组选择**：基于 GRM 的 GBLUP 育种值估计（`app/genomics/genomic_selection.py`）。
-- **性能测定**：产奶量、日增重等性状记录与统计（`app/breeding/performance.py`）。
+- **性能测定**：性状与测定记录领域模型已就绪（`app/breeding/performance.py`）；*API 端点尚未暴露，统计汇总亦未实现*。
 
 ### 感知与告警
 
@@ -41,16 +41,17 @@ PastureGen 覆盖三大业务主线：
 
 ### 多租户与安全
 
-- **租户隔离**：`X-API-Key` 中间件鉴权，事件、告警、元数据、死信全链路按 `tenant_id` 隔离。
+- **租户隔离**：`X-API-Key` 中间件鉴权，事件、告警、元数据、系谱、死信全链路按 `tenant_id` 隔离。
+- **凭据边界**：`X-Tenant-ID` 属客户端可控信息，**不作为鉴权凭据**——无 Key 时指定非默认租户一律 401；仅在显式打开 `ALLOW_TENANT_HEADER_FALLBACK=true` 时用于本地联调（生产严禁开启）。
 - **API Key 哈希存储**：密钥仅 SHA-256 摘要落库，明文只在创建时一次性返回；自动迁移旧明文库并物理删除明文列。
 - **管理端接口**：租户创建 / 列表使用独立 `X-Admin-Key`，列表不泄露任何密钥字段。
 - **可配置元数据**：性状定义、告警阈值、品种与规则按租户自定义，附默认元数据库。
 
 ### 工程质量
 
-- **pytest 测试套件**：39 个用例覆盖领域端点、租户隔离、Key 哈希迁移、告警去抖、推送重试、死信补发。
-- **CI 基线**：GitHub Actions（Python 3.11 / 3.12 矩阵），每次 push / PR 自动跑 pytest + 端到端冒烟脚本。
-- **容器化**：Dockerfile 与 docker-compose（PostgreSQL / TimescaleDB / MinIO）。
+- **pytest 测试套件**：54 个用例覆盖领域端点、租户隔离与凭据边界、列表取数顺序、系谱顺序无关性与环路拒绝、Key 哈希迁移、告警去抖、推送重试、死信补发。
+- **CI 基线**：GitHub Actions（Python 3.11 / 3.12 / 3.13 矩阵），每次 push / PR 自动跑语法门禁 + pytest + 端到端冒烟脚本。
+- **容器化**：Dockerfile（非 root 运行 + HEALTHCHECK）与 docker-compose（PostgreSQL / TimescaleDB / MinIO）。
 
 ## 快速开始
 
@@ -64,6 +65,9 @@ PastureGen 覆盖三大业务主线：
 # 克隆仓库
 git clone https://github.com/zhouyulsj/PastureGen.git
 cd PastureGen
+
+# 配置环境变量（生产环境务必设置 ADMIN_API_KEY）
+cp .env.example .env
 
 # 基础安装（开发）
 pip install -e .
@@ -120,20 +124,44 @@ python scripts/smoke_test.py  # 端到端冒烟
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `ADMIN_API_KEY` | 空 | 租户管理接口的 `X-Admin-Key`（生产必填） |
+| `ALLOW_TENANT_HEADER_FALLBACK` | `false` | 是否允许无 Key 时用 `X-Tenant-ID` 指定租户（**生产严禁开启**） |
 | `DEFAULT_TENANT_ID` | `default` | 未带 Key 请求归属的默认租户 |
 | `SENSOR_DB_PATH` | `data/sensor.db` | 时序事件 SQLite 路径 |
 | `TENANT_DB_PATH` | `data/tenant.db` | 租户库路径 |
 | `ALERT_DB_PATH` | `data/alert.db` | 告警库路径 |
+| `PEDIGREE_DB_PATH` | `data/pedigree.db` | 系谱库路径 |
 | `PUSH_DEAD_LETTER_DB_PATH` | `data/push_dead_letter.db` | 推送死信库路径 |
 | `ALERT_COOLDOWN_SECONDS` | `3600` | 同类告警冷却去抖窗口 |
+| `ALERT_TREND_WINDOW` | `50` | 每（租户,个体,指标）保留的趋势读数条数 |
+| `ALERT_TREND_MAX_ENTITIES` | `10000` | 内存跟踪的实体上限，超出按插入顺序淘汰 |
 | `ALERT_WEBHOOK_URL` | 空 | 全局推送渠道 URL（空则仅租户渠道） |
-| `ALERT_WEBHOOK_FORMAT` | `feishu` | 全局渠道消息格式 |
+| `ALERT_WEBHOOK_FORMAT` | `feishu` | 全局渠道消息格式（`feishu` / `generic`） |
 | `ALERT_PUSH_QUEUE_SIZE` | `1000` | 异步推送队列容量 |
 | `ALERT_PUSH_MAX_RETRIES` | `3` | 单条消息最大重试次数 |
 | `ALERT_PUSH_RETRY_DELAY_SECONDS` | `1.0` | 指数退避首档延迟 |
+| `DEAD_LETTER_REPLAY_TIMEOUT_SECONDS` | `5.0` | 死信补发单次发送超时 |
+| `DEAD_LETTER_REPLAY_MAX_RETRIES` | `2` | 死信补发重试次数 |
+| `DEAD_LETTER_REPLAY_RETRY_DELAY_SECONDS` | `0.2` | 死信补发退避基数 |
 | `DEPLOYMENT_ROLE` | `cloud` | 部署角色（`cloud` / `edge`） |
 | `ENABLE_MOCK_ADAPTERS` | `true` | 是否注册 mock 适配器（演示/测试用） |
 | `MQTT_HOST` / `MQTT_PORT` | `localhost` / `1883` | 边缘 MQTT 接入参数 |
+
+完整清单与说明见 [`.env.example`](./.env.example)。
+
+## 当前能力边界（已知未实现）
+
+以下能力在代码中已预留接口或配置，但**尚未接线**，文档其余部分不应被理解为已具备：
+
+| 能力 | 现状 |
+|---|---|
+| MQTT 订阅接入 | `MqttIngestionService` 已实现但**未在应用启动流程中实例化**，需调用方显式启动 |
+| 边缘 / 云端角色切换 | `DEPLOYMENT_ROLE` 已声明，尚未据此裁剪启动的子系统 |
+| mock 适配器开关 | `ENABLE_MOCK_ADAPTERS` 已声明，尚未接入注册逻辑（mock 适配器当前恒注册） |
+| PostgreSQL / TimescaleDB | `DATABASE_URL` / `TIMESCALE_URL` 为预留项，仓储仍为 SQLite |
+| 性能测定 API | 领域模型就绪，无端点；统计汇总未实现 |
+| 钉钉 / 企业微信 / Slack 载荷 | 仅实现 `feishu` 与 `generic` 两种 webhook 格式 |
+| HWE 检验、异常检测模型 | SNP 质控仅实现 call rate + MAF；健康监测仅阈值判定 |
+| 参考群管理 | 未实现 |
 
 ## 部署
 
@@ -169,7 +197,7 @@ docker compose up -d
 ```text
 app/
 ├── api/            # 育种 / 基因组 REST 端点
-├── breeding/       # 系谱、近交、BLUP、性能测定
+├── breeding/       # 系谱（含租户级存储）、近交、BLUP、性能测定
 ├── core/           # 配置（pydantic-settings）
 ├── device_ingestion/   # 设备适配器、采集网关、时序存储
 │   └── adapters/       # RFID / 体重秤 / 摄像头适配器
@@ -177,8 +205,8 @@ app/
 ├── notification/   # 推送渠道、异步队列、重试、死信
 ├── perception/     # 发情 / 分娩 / 健康监测与告警
 └── tenant/         # 多租户：鉴权中间件、元数据、Key 哈希存储
-tests/              # pytest 套件（39 用例）
-scripts/            # 端到端冒烟脚本
+tests/              # pytest 套件（54 用例，含回归测试）
+scripts/            # 端到端冒烟脚本（临时库运行，不污染 data/）
 docs/               # 架构与部署文档
 ```
 

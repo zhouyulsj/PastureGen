@@ -42,9 +42,25 @@ docker run -d --name edge-node \
 
 ## 设备接入方式
 
-平台支持三种真实设备接入协议，均已实现适配器：
+平台支持三种接入方式：
 
-1. **HTTP Webhook**（零依赖，任何支持 HTTP 回调的设备）：
+1. **HTTP Webhook**（零依赖，任何支持 HTTP 回调的设备）——**已接线**：
    `POST /api/v1/devices/webhook/{adapter_type}`
-2. **MQTT 订阅**（物联网设备主流）：`MqttIngestionService`，需 `pip install .[edge]`
-3. **Modbus TCP**（称重/温湿度仪表）：`modbus_scale` 适配器，需 `pip install .[edge]`
+2. **Modbus TCP**（称重/温湿度仪表）——适配器 `modbus_scale` 已实现并通过
+   `POST /api/v1/devices/collect` 可调用，需 `pip install -e ".[edge]"`
+3. **MQTT 订阅**（物联网设备主流）——`MqttIngestionService` 已实现，
+   但**尚未接入应用启动流程**（`app/main.py` 的 lifespan 不会自动启动它），
+   需由调用方显式实例化并调用 `start()`，且需 `pip install -e ".[edge]"`。
+
+## 生产部署检查清单
+
+上线前请逐项确认：
+
+- [ ] `ADMIN_API_KEY` 已设置为足够随机的值（留空会导致管理端接口不可用）
+- [ ] `ALLOW_TENANT_HEADER_FALLBACK` 保持 `false`
+      ——开启后任何人伪造 `X-Tenant-ID` 即可读写他人租户数据
+- [ ] `ENABLE_MOCK_ADAPTERS` 关闭（当前该项尚未接线，需同时确认不暴露 mock 适配器）
+- [ ] `.env` 不入库（已在 `.gitignore` 中），密钥通过环境变量或密钥管理服务注入
+- [ ] `data/` 目录挂载到持久卷；SQLite 定期快照备份
+- [ ] 容器以非 root 用户运行（镜像内置 `pasture` 用户）
+- [ ] 在负载均衡层限制 `/api/v1/devices/webhook/*` 的来源与频率

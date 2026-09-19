@@ -71,8 +71,9 @@ class TenantRegistry:
     def __init__(self, repository: TenantRepository | None = None) -> None:
         self.repository: TenantRepository = repository or InMemoryTenantRepository()
 
-    def bind_repository(self, repository: TenantRepository) -> None:
-        self.repository = repository
+    def bind_repository(self, repository: TenantRepository | None) -> None:
+        """绑定租户仓储；传 None 时回落内存实现（lifespan 关停解绑用）。"""
+        self.repository = repository or InMemoryTenantRepository()
 
     def create_tenant(
         self, display_name: str, breed_code: str = DEFAULT_BREED

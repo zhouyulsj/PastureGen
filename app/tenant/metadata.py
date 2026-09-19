@@ -39,7 +39,8 @@ class TenantMetadataRegistry:
         self._store = store
         self._cache: dict[str, TenantMetadata] = {}
 
-    def bind_store(self, store: MetadataStore) -> None:
+    def bind_store(self, store: MetadataStore | None) -> None:
+        """绑定元数据存储；lifespan 关停时传 None 解绑，避免持有已关闭连接。"""
         self._store = store
 
     def _persist(self, tenant_id: str, metadata: TenantMetadata) -> None:

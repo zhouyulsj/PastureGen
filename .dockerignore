@@ -1,0 +1,25 @@
+# 构建上下文瘦身：镜像里只需要 app/ 与元数据
+.git
+.github
+.codeartsdoer
+.pytest_cache
+.ruff_cache
+.mypy_cache
+__pycache__
+**/__pycache__
+*.py[cod]
+*.egg-info
+.venv
+venv
+dist
+build
+data
+docs
+tests
+scripts
+*.db
+*.sqlite3
+.env
+.env.*
+!.env.example
+TODO.md

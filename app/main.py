@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.router import api_router
+from app.breeding.store import SqlitePedigreeStore, pedigree_registry
 from app.core.config import settings
 from app.device_ingestion.ingestion_gateway import ingestion_gateway
 from app.device_ingestion.sqlite_timeseries_repository import SqliteTimeseriesRepository
@@ -64,9 +65,21 @@ async def lifespan(application: FastAPI):
     metadata_store = SqliteMetadataStore(settings.tenant_db_path)
     tenant_metadata_registry.bind_store(metadata_store)
 
+    pedigree_store = SqlitePedigreeStore(settings.pedigree_db_path)
+    pedigree_registry.bind_store(pedigree_store)
+
     yield
     push_queue.shutdown()
+    # 依次解绑并关闭：先断开单例引用，再关闭连接，避免留下悬空的已关闭连接
     bind_dead_letter_store(None)
+    alert_service.bind_notifier(None)
+    alert_service.bind_repository(None)
+    ingestion_gateway.set_alert_service(None)
+    ingestion_gateway.set_repository(None)
+    tenant_metadata_registry.bind_store(None)
+    tenant_registry.bind_repository(None)
+    pedigree_registry.bind_store(None)
+    pedigree_store.close()
     dead_letter_store.close()
     metadata_store.close()
     tenant_repository.close()

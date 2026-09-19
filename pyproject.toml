@@ -32,3 +32,16 @@ include = ["app*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+# Ruff 配置已就绪，供本地与后续 CI 使用：
+#   python -m ruff check . && python -m ruff format --check .
+# 注：CI 暂未强制该步骤（需先把存量告警清零），见 TODO.md。
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [".venv", "venv", "build", "dist", "data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# E501 交由 line-length 控制；中文注释与文档字符串不强制折行
+ignore = ["E501"]

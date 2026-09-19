@@ -20,10 +20,12 @@ class IngestionGateway:
         self._repository: TimeseriesRepository | None = None
         self._alert_service: "AlertService | None" = None
 
-    def set_repository(self, repository: TimeseriesRepository) -> None:
+    def set_repository(self, repository: TimeseriesRepository | None) -> None:
+        """绑定/解绑时序仓储。关停时应传 None，避免持有已关闭的连接。"""
         self._repository = repository
 
-    def set_alert_service(self, alert_service: "AlertService") -> None:
+    def set_alert_service(self, alert_service: "AlertService | None") -> None:
+        """绑定/解绑告警服务。关停时应传 None。"""
         self._alert_service = alert_service
 
     def ingest(self, events: list[SensorReadingEvent]) -> None:

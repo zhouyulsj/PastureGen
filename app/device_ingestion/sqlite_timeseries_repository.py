@@ -80,13 +80,25 @@ class SqliteTimeseriesRepository(TimeseriesRepository):
             conditions.append("timestamp <= ?")
             parameters.append(end)
 
-        statement = "SELECT device_id, metric, value, unit, animal_id, timestamp, tenant_id FROM sensor_readings"
-        if conditions:
-            statement += " WHERE " + " AND ".join(conditions)
-        statement += " ORDER BY timestamp"
+        columns = "device_id, metric, value, unit, animal_id, timestamp, tenant_id"
+        where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+
         if limit is not None:
-            statement += " LIMIT ?"
+            # 先在子查询里按时间倒序取“最新的 limit 条”，再升序返回给调用方。
+            # 若直接 ORDER BY timestamp ASC LIMIT n，取到的是**最旧**的 n 条，
+            # 数据量一旦超过 limit，新采集的事件将永远不可见。
+            statement = (
+                f"SELECT {columns} FROM ("
+                f"SELECT id, {columns} FROM sensor_readings{where} "
+                "ORDER BY timestamp DESC, id DESC LIMIT ?"
+                ") ORDER BY timestamp ASC, id ASC"
+            )
             parameters.append(limit)
+        else:
+            statement = (
+                f"SELECT {columns} FROM sensor_readings{where} "
+                "ORDER BY timestamp ASC, id ASC"
+            )
 
         cursor = self._connection.execute(statement, parameters)
         return [self._row_to_event(row) for row in cursor.fetchall()]

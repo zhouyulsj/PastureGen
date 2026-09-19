@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 # 保证从仓库根目录直接运行 pytest 时（即使未 pip install -e）可以导入 app 包
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.breeding.store import pedigree_registry  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.main import app  # noqa: E402
 from app.perception.alert_service import alert_service  # noqa: E402
@@ -20,22 +21,27 @@ def client(tmp_path, monkeypatch):
     """为每个测试提供完全隔离的 TestClient。
 
     把所有 SQLite 持久化路径重定向到独立临时目录，并在进入前清理
-    模块级单例的跨测试残留（租户元数据缓存、告警趋势/冷却内存状态）；
-    TestClient 上下文触发 lifespan，完成仓储/注册表绑定与关停解绑。
+    模块级单例的跨测试残留（租户元数据缓存、租户系谱缓存、告警趋势/冷却
+    内存状态）；TestClient 上下文触发 lifespan，完成仓储/注册表绑定与关停解绑。
     """
     monkeypatch.setattr(settings, "sensor_db_path", str(tmp_path / "sensor.db"))
     monkeypatch.setattr(settings, "tenant_db_path", str(tmp_path / "tenant.db"))
     monkeypatch.setattr(settings, "alert_db_path", str(tmp_path / "alert.db"))
+    monkeypatch.setattr(settings, "pedigree_db_path", str(tmp_path / "pedigree.db"))
     monkeypatch.setattr(
         settings, "push_dead_letter_db_path", str(tmp_path / "push_dead_letter.db")
     )
     monkeypatch.setattr(settings, "alert_webhook_url", "")  # 关闭全局 webhook 通道
     monkeypatch.setattr(settings, "admin_api_key", ADMIN_KEY)
+    monkeypatch.setattr(settings, "allow_tenant_header_fallback", False)
+    monkeypatch.setattr(settings, "dead_letter_replay_max_retries", 0)
     tenant_metadata_registry._cache.clear()
+    pedigree_registry.clear_cache()
     alert_service.clear()
     with TestClient(app) as test_client:
         yield test_client
     tenant_metadata_registry._cache.clear()
+    pedigree_registry.clear_cache()
 
 
 @pytest.fixture

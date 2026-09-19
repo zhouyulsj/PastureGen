@@ -1,5 +1,7 @@
+import shutil
 import sqlite3
 import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -29,10 +31,26 @@ from app.tenant.tenant_registry import hash_api_key
 FEISHU_URL = "https://open.feishu.cn/open-apis/bot/v2/hook/smoke-test"
 
 
+def redirect_persistence(workspace: Path) -> None:
+    """把全部持久化路径指向临时目录。
+
+    否则脚本会反复写入 ``data/``：每跑一次就多建一个租户、事件与告警持续
+    累积，既污染开发库、又让脚本输出不可复现。重定向后脚本幂等，
+    可与 pytest 一样任意重跑。
+    """
+    settings.sensor_db_path = str(workspace / "sensor.db")
+    settings.tenant_db_path = str(workspace / "tenant.db")
+    settings.alert_db_path = str(workspace / "alert.db")
+    settings.pedigree_db_path = str(workspace / "pedigree.db")
+    settings.push_dead_letter_db_path = str(workspace / "push_dead_letter.db")
+
+
 def run() -> None:
     settings.admin_api_key = "smoke-admin-key"
-    admin_headers = {"X-Admin-Key": settings.admin_api_key}
+    workspace = Path(tempfile.mkdtemp(prefix="pasturegen-smoke-"))
+    redirect_persistence(workspace)
     with TestClient(app) as client:
+        admin_headers = {"X-Admin-Key": settings.admin_api_key}
         print("healthz:", client.get("/healthz").json())
         print("adapters:", client.get("/api/v1/devices/adapters").json())
 
@@ -214,7 +232,7 @@ def run() -> None:
         assert bad.status_code == 401
 
         # 旧版明文库迁移：打开新仓储后老 Key 仍可认证，且明文列被彻底删除
-        legacy_path = Path("data/smoke_tenant_legacy.db")
+        legacy_path = workspace / "smoke_tenant_legacy.db"
         legacy_path.unlink(missing_ok=True)
         legacy_key = f"legacy-{uuid.uuid4().hex}"
         legacy_conn = sqlite3.connect(legacy_path)
@@ -415,7 +433,7 @@ def run() -> None:
         assert tiny_queue.dropped == 1
 
         # 重试与死信：使用可删重来的临时库，保证脚本可重复运行
-        dl_path = Path("data/smoke_dead_letter.db")
+        dl_path = workspace / "smoke_dead_letter.db"
         dl_path.unlink(missing_ok=True)
         dl_store = SqliteDeadLetterRepository(str(dl_path))
 
@@ -585,6 +603,8 @@ def run() -> None:
         dl_api_store.delete(foreign_id)
         dl_api_store.close()
 
+    # 断言失败时保留临时目录便于排查，正常通过则清理
+    shutil.rmtree(workspace, ignore_errors=True)
     print("ALL SMOKE TESTS PASSED")
 
 

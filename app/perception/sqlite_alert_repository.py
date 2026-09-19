@@ -59,13 +59,23 @@ class SqliteAlertRepository(AlertRepository):
             conditions.append("tenant_id = ?")
             parameters.append(tenant_id)
 
-        statement = "SELECT kind, data FROM alerts"
-        if conditions:
-            statement += " WHERE " + " AND ".join(conditions)
-        statement += " ORDER BY timestamp"
+        where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+
         if limit is not None:
-            statement += " LIMIT ?"
+            # 与事件查询同源问题：ORDER BY timestamp ASC LIMIT n 取到的是最旧 n 条。
+            # 告警列表必须给出**最新**记录，故用倒序子查询取最新 n 条后再升序返回。
+            statement = (
+                "SELECT kind, data FROM ("
+                f"SELECT id, timestamp, kind, data FROM alerts{where} "
+                "ORDER BY timestamp DESC, id DESC LIMIT ?"
+                ") ORDER BY timestamp ASC, id ASC"
+            )
             parameters.append(limit)
+        else:
+            statement = (
+                f"SELECT kind, data FROM alerts{where} "
+                "ORDER BY timestamp ASC, id ASC"
+            )
 
         cursor = self._connection.execute(statement, parameters)
         return [load_alert(kind, data) for kind, data in cursor.fetchall()]

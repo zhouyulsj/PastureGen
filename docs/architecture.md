@@ -1,6 +1,6 @@
 # AI 智能牧场育种平台 · 架构设计
 
-> 面向对象：奶牛 / 肉牛 | 部署形态：边缘 + 云端混合 | 目标：可插拔、多租户、留足后期演进空间
+> 面向对象：畜种通用（牛、水牛、羊等家畜） | 部署形态：边缘 + 云端混合 | 目标：可插拔、多租户、留足后期演进空间
 
 ---
 
@@ -65,20 +65,34 @@
 
 统一产出为 `AnimalHealthEvent` / `AnimalReproductionEvent`（见 5.3 事件模型）。
 
+> **实现状态**：体重/盘点/健康/发情/分娩的**阈值与趋势规则**已实现
+> （`app/perception/`）。标注为 YOLO 视觉推理、孤立森林/LSTM 异常检测、
+> 深度相机点云体尺回归的部分**尚未实现**，属规划项。
+
 ### 3.2 传统育种（`breeding`）
 
 - **谱系管理**：录入/导入、环路检测、父母一致性校验、系谱树、A 矩阵与近交系数。
+  - A 矩阵按**拓扑序**构建，结果与个体登记顺序无关；环路登记在写入时即被拒绝。
+  - 系谱按租户隔离并持久化到 SQLite（`app/breeding/store.py`）。
 - **性能测定**：生长、繁殖、体型线性鉴定等性状，按品种元数据配置性状模板。
+  - **实现状态**：性状与记录领域模型已就绪（`app/breeding/performance.py`），
+    但**尚无 API 端点，统计汇总亦未实现**。
 - **BLUP 遗传评估**：混合线性模型 `y = Xb + Zu + e`，估计 EBV 与遗传参数。
   - 抽象 `GeneticSolver` 接口，接入 R 生态（lme4/MCMCglmm）或 Python 数值求解。
   - 支持动物模型，为向单步法（ssGBLUP）过渡预留 H 矩阵。
+  - **实现状态**：动物模型 BLUP 与 GBLUP 已实现；A⁻¹ 采用基础群非近交（F=0）
+    的经典 Henderson 系数，群体近交明显时需用含 d_j 的一般式校正。
 
 ### 3.3 新型育种（`genomics`）
 
 - **SNP 质控**：call rate、MAF、HWE 检验、个体/位点过滤。
+  - **实现状态**：已实现 call rate 与 MAF 过滤；**HWE 检验未实现**。
 - **基因组关系矩阵 G**：VanRaden 法从芯片数据构建。
 - **基因组选择**：GBLUP → **ssGBLUP**（单步法，纳入无基因分型个体，最贴合生产）。
+  - 已实现 GBLUP 与 ssGBLUP 求解及 H 矩阵构建；`_blend_to_positive_definite`
+    当前为启发式混合（`0.99G + 0.01I`），尚未做基于特征值的正式校正。
 - **参考群管理**：有表型 + 有基因型个体持续累积，支撑 GEBV 可靠性。
+  - **实现状态**：未实现，属规划项。
 
 ---
 
@@ -108,6 +122,11 @@ app/device_ingestion/
 ### 4.3 多租户隔离
 
 `tenant` 维度贯穿全域，通过请求上下文注入，实现数据隔离与个性化配置。
+
+**凭据边界**：租户身份**只**由 `X-API-Key`（SHA-256 摘要比对）确定。
+`X-Tenant-ID` 仅用于响应回显与观测，绝不作为鉴权依据——无 Key 时指定
+非默认租户一律 401。本地多租户联调可显式打开 `ALLOW_TENANT_HEADER_FALLBACK`，
+生产环境严禁开启。
 
 ### 4.4 元数据驱动
 
@@ -145,6 +164,10 @@ app/device_ingestion/
 - 前端：Vue3
 - 部署：Docker Compose（起步）→ K8s（演进）
 
+> **实现状态**：当前仓库为**纯后端**，运行时仓储为 **SQLite**。
+> PostgreSQL / TimescaleDB / MinIO / Vue3 / YOLO / scikit-learn / PyTorch
+> 均属规划项（见根目录 README「当前能力边界」）。
+
 ---
 
 ## 7. 工程目录结构
@@ -154,13 +177,14 @@ AIBreeding/
 ├── app/
 │   ├── main.py                    # FastAPI 入口
 │   ├── core/                      # 配置 / 依赖注入 / 多租户上下文
-│   ├── tenant/                    # 多租户
+│   ├── tenant/                    # 多租户：鉴权中间件 / 元数据 / Key 哈希存储
 │   ├── device_ingestion/          # 设备数据接入层（核心可扩展）
 │   ├── perception/                # 模块① 基本管理
-│   ├── breeding/                  # 模块② 传统育种
+│   ├── breeding/                  # 模块② 传统育种（含 store.py 租户级系谱存储）
 │   ├── genomics/                  # 模块③ 新型育种
 │   └── api/                       # 路由汇总
 ├── docs/architecture.md
+├── .env.example                   # 环境变量示例（cp 为 .env 使用）
 ├── .codeartsdoer/specs/breeding/  # SDD 需求 / 设计 / 任务
 ├── docker-compose.yml
 └── pyproject.toml
